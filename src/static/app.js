@@ -7,11 +7,16 @@ document.addEventListener("DOMContentLoaded", () => {
   // Function to fetch activities from API
   async function fetchActivities() {
     try {
-      const response = await fetch("/activities");
+      const response = await fetch("/activities", { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`Failed to load activities: ${response.status}`);
+      }
+
       const activities = await response.json();
 
       // Clear loading message
       activitiesList.innerHTML = "";
+      activitySelect.replaceChildren(activitySelect.options[0]);
 
       // Populate activities list
       Object.entries(activities).forEach(([name, details]) => {
@@ -27,6 +32,70 @@ document.addEventListener("DOMContentLoaded", () => {
           <p><strong>Availability:</strong> ${spotsLeft} spots left</p>
         `;
 
+        const participantsSection = document.createElement("div");
+        participantsSection.className = "activity-participants";
+
+        const participantsHeading = document.createElement("h5");
+        participantsHeading.textContent = `Participants (${details.participants.length})`;
+        participantsSection.appendChild(participantsHeading);
+
+        const participantsList = document.createElement("ul");
+        details.participants.forEach((participant) => {
+          const listItem = document.createElement("li");
+          listItem.className = "participant-row";
+
+          const participantEmail = document.createElement("span");
+          participantEmail.textContent = participant;
+          listItem.appendChild(participantEmail);
+
+          const removeButton = document.createElement("button");
+          removeButton.className = "remove-participant";
+          removeButton.type = "button";
+          removeButton.innerHTML = `
+            <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+              <path d="M4 7h16M10 11v6m4-6v6M5 7l1 14h12l1-14M9 7V4h6v3" />
+            </svg>
+          `;
+          removeButton.setAttribute("aria-label", `Unregister ${participant} from ${name}`);
+          removeButton.title = `Unregister ${participant}`;
+          removeButton.addEventListener("click", async () => {
+            removeButton.disabled = true;
+            try {
+              const response = await fetch(
+                `/activities/${encodeURIComponent(name)}/signup?email=${encodeURIComponent(participant)}`,
+                { method: "DELETE" }
+              );
+              const result = await response.json();
+
+              if (!response.ok) {
+                throw new Error(result.detail || "Failed to unregister participant.");
+              }
+
+              messageDiv.textContent = result.message;
+              messageDiv.className = "success";
+              messageDiv.classList.remove("hidden");
+              await fetchActivities();
+            } catch (error) {
+              messageDiv.textContent = error.message || "Failed to unregister participant.";
+              messageDiv.className = "error";
+              messageDiv.classList.remove("hidden");
+              removeButton.disabled = false;
+              console.error("Error unregistering participant:", error);
+            }
+          });
+          listItem.appendChild(removeButton);
+          participantsList.appendChild(listItem);
+        });
+
+        if (details.participants.length === 0) {
+          const listItem = document.createElement("li");
+          listItem.className = "no-participants";
+          listItem.textContent = "No one signed up yet";
+          participantsList.appendChild(listItem);
+        }
+
+        participantsSection.appendChild(participantsList);
+        activityCard.appendChild(participantsSection);
         activitiesList.appendChild(activityCard);
 
         // Add option to select dropdown
@@ -62,6 +131,7 @@ document.addEventListener("DOMContentLoaded", () => {
         messageDiv.textContent = result.message;
         messageDiv.className = "success";
         signupForm.reset();
+        await fetchActivities();
       } else {
         messageDiv.textContent = result.detail || "An error occurred";
         messageDiv.className = "error";
